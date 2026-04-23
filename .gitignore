@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.output/
+coverage/
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# secrets / env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.local
+
+# os
+.DS_Store
+Thumbs.db
+
+# build artifacts
+*.log
+*.tgz
+*.zip
