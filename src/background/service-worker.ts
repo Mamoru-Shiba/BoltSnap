@@ -110,13 +110,11 @@ async function handleCaptureRequest(
 ): Promise<{ filename: string; dataUrl?: string }> {
   const blob = await runCapture(mode);
   const filename = formatFilename(new Date());
-  await downloadService.download(blob, filename);
-  let dataUrl: string | undefined;
-  if (copyToClipboard) {
-    // Clipboard write is performed by the popup (service worker lacks clipboard access).
-    dataUrl = await blobToDataUrl(blob);
-  }
-  return dataUrl === undefined ? { filename } : { filename, dataUrl };
+  // MV3 の service worker では URL.createObjectURL が利用できないため、data URL 経由で DL する。
+  const dataUrl = await blobToDataUrl(blob);
+  await downloadService.download(dataUrl, filename);
+  // Clipboard 書き込みは popup 側で行うため、必要なときのみ dataUrl を返す。
+  return copyToClipboard ? { filename, dataUrl } : { filename };
 }
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender, sendResponse) => {

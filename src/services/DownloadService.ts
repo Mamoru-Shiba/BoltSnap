@@ -1,15 +1,13 @@
 export interface DownloadService {
-  download(blob: Blob, filename: string): Promise<number>;
+  /**
+   * @param dataUrl `data:image/png;base64,...` 形式の URL。
+   *                MV3 service worker では URL.createObjectURL が使えないため data URL を使う。
+   */
+  download(dataUrl: string, filename: string): Promise<number>;
 }
 
 export const downloadService: DownloadService = {
-  async download(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    try {
-      return await chrome.downloads.download({ url, filename, saveAs: false });
-    } finally {
-      // Revoke after a tick to ensure the browser has started reading.
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
-    }
+  async download(dataUrl, filename) {
+    return chrome.downloads.download({ url: dataUrl, filename, saveAs: false });
   },
 };
