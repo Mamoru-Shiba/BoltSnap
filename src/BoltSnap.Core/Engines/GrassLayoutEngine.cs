@@ -77,9 +77,8 @@ public static class GrassLayoutEngine
             return null;
         }
 
-        var step = layout.CellSize + layout.CellGap;
-        var column = (x - grass.X) / step;
-        var row = (y - grass.Y) / step;
+        var column = (x - grass.X) / (layout.CellWidth + layout.CellGap);
+        var row = (y - grass.Y) / (layout.CellHeight + layout.CellGap);
         if (row >= RowCount)
         {
             return null;

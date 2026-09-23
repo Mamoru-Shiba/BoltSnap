@@ -25,18 +25,18 @@ public sealed class MinuteBitmap
         _bits = bytes.ToArray();
     }
 
-    public int Count
-    {
-        get
-        {
-            var total = 0;
-            foreach (var b in _bits)
-            {
-                total += BitOperations.PopCount(b);
-            }
+    public int Count => CountSetBits(_bits);
 
-            return total;
+    /// <summary>ビットマップのバイト列から、稼働の分数を数える（配列を作らない）。</summary>
+    public static int CountSetBits(ReadOnlySpan<byte> bytes)
+    {
+        var total = 0;
+        foreach (var b in bytes)
+        {
+            total += BitOperations.PopCount(b);
         }
+
+        return total;
     }
 
     public bool IsSet(int minute)

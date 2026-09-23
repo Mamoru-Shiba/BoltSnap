@@ -86,7 +86,7 @@ internal sealed class BarRenderer : IDisposable
 
         Fill(hdc, timeline.X, timeline.Y, timeline.Width, timeline.Height, _track);
 
-        foreach (var hour in new[] { 6, 12, 18 })
+        foreach (var hour in new[] { 3, 6, 9, 12, 15, 18, 21 })
         {
             Fill(hdc, timeline.X + timeline.Width * hour / 24, timeline.Y, 1, timeline.Height, _tick);
         }
@@ -105,16 +105,17 @@ internal sealed class BarRenderer : IDisposable
 
     private void DrawGrass(nint hdc, BarLayout layout, BarModel model, GrassCell? hovered)
     {
-        var step = layout.CellSize + layout.CellGap;
+        var stepX = layout.CellWidth + layout.CellGap;
+        var stepY = layout.CellHeight + layout.CellGap;
         foreach (var cell in model.Grass)
         {
             var rect = new RECT
             {
-                Left = layout.Grass.X + cell.Column * step,
-                Top = layout.Grass.Y + cell.Row * step,
+                Left = layout.Grass.X + cell.Column * stepX,
+                Top = layout.Grass.Y + cell.Row * stepY,
             };
-            rect.Right = rect.Left + layout.CellSize;
-            rect.Bottom = rect.Top + layout.CellSize;
+            rect.Right = rect.Left + layout.CellWidth;
+            rect.Bottom = rect.Top + layout.CellHeight;
 
             if (cell.IsFuture)
             {

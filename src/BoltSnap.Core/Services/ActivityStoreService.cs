@@ -58,7 +58,7 @@ public sealed class ActivityStoreService : IActivityStore
         for (var day = 0; day < days; day++)
         {
             var start = HeaderLength + day * MinuteBitmap.ByteLength;
-            result[day] = new MinuteBitmap(data.AsSpan(start, MinuteBitmap.ByteLength)).Count;
+            result[day] = MinuteBitmap.CountSetBits(data.AsSpan(start, MinuteBitmap.ByteLength));
         }
 
         return result;

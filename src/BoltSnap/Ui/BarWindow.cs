@@ -34,6 +34,8 @@ internal sealed unsafe class BarWindow
     private uint _taskbarCreatedMessage;
     private PixelRect _placement;
     private bool _shown;
+    private FreeRegion? _freeRegion;
+    private int _placeTicks;
 
     public BarWindow(IActivityStore store)
     {
@@ -192,9 +194,17 @@ internal sealed unsafe class BarWindow
             return;
         }
 
+        var minuteChanged = stamp != _lastMinuteStamp;
         _lastMinuteStamp = stamp;
         _model = _modelService.Build(now);
         NativeMethods.InvalidateRect(_hwnd, 0, 0);
+
+        if (minuteChanged)
+        {
+            // 常駐アプリなので、1 分ごとに不要なデータを回収し、使っていないページを OS に返す
+            GC.Collect();
+            NativeMethods.SetProcessWorkingSetSize(NativeMethods.GetCurrentProcess(), -1, -1);
+        }
     }
 
     private void OnMouseMove(int x, int y)
@@ -275,9 +285,33 @@ internal sealed unsafe class BarWindow
     /// </summary>
     private void Reposition(bool force)
     {
-        var (taskbar, trayLeft, dpi) = LocateTaskbar();
+        var (taskbar, trayLeft, dpi, taskbarHwnd) = LocateTaskbar();
         UpdateScale(dpi);
-        var target = BarLayoutEngine.PlaceOnTaskbar(taskbar, trayLeft, _scale);
+
+        // アイコンの並びが変わることがあるので、空きは 16 秒ごと（2 秒タイマーの 8 回に 1 回）に測り直す。
+        // 測定は別プロセスで行い、結果が出ていれば取り込む
+        if (taskbarHwnd == 0)
+        {
+            _freeRegion = null;
+        }
+        else
+        {
+            if (force || _placeTicks++ % 8 == 0)
+            {
+                TaskbarProbeService.BeginProbe(taskbarHwnd, trayLeft);
+                if (force)
+                {
+                    // 起動時などは、最初の位置がずれて見えないよう少しだけ待つ
+                    ApplyProbe(TaskbarProbeService.WaitForResult(1500, out var first), first);
+                }
+            }
+
+            ApplyProbe(TaskbarProbeService.Collect(out var region), region);
+        }
+
+        var target = _freeRegion is { } free
+            ? BarLayoutEngine.PlaceInRegion(taskbar, free.Left, free.Right, _scale)
+            : BarLayoutEngine.PlaceOnTaskbar(taskbar, trayLeft, _scale);
         var moved = force || target != _placement;
         _placement = target;
 
@@ -307,7 +341,20 @@ internal sealed unsafe class BarWindow
         }
     }
 
-    private (PixelRect Taskbar, int TrayLeft, uint Dpi) LocateTaskbar()
+    private void ApplyProbe(ProbeState state, FreeRegion region)
+    {
+        switch (state)
+        {
+            case ProbeState.Done:
+                _freeRegion = region;
+                break;
+            case ProbeState.Failed:
+                _freeRegion = null;
+                break;
+        }
+    }
+
+    private (PixelRect Taskbar, int TrayLeft, uint Dpi, nint TaskbarHwnd) LocateTaskbar()
     {
         var taskbar = NativeMethods.FindWindowW("Shell_TrayWnd", null);
         if (taskbar != 0
@@ -325,7 +372,8 @@ internal sealed unsafe class BarWindow
             return (
                 new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top),
                 trayLeft,
-                dpi == 0 ? 96 : dpi);
+                dpi == 0 ? 96 : dpi,
+                taskbar);
         }
 
         var monitor = NativeMethods.MonitorFromPoint(default, NativeMethods.MONITOR_DEFAULTTOPRIMARY);
@@ -337,7 +385,8 @@ internal sealed unsafe class BarWindow
         return (
             new PixelRect(info.RcMonitor.Left, bottom - height, info.RcMonitor.Right - info.RcMonitor.Left, height),
             info.RcMonitor.Right,
-            ownDpi == 0 ? 96 : ownDpi);
+            ownDpi == 0 ? 96 : ownDpi,
+            0);
     }
 
     /// <summary>全画面のアプリやプレゼン中は、帯が上に被さらないよう隠す。</summary>
