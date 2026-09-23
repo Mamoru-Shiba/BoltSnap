@@ -10,3 +10,6 @@ trim_trailing_whitespace = true
 
 [*.md]
 trim_trailing_whitespace = false
+
+[*.{cs,csproj,props,manifest}]
+indent_size = 4
