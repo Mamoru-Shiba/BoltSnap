@@ -41,11 +41,12 @@ public class GrassLayoutEngineTests
     {
         var cells = GrassLayoutEngine.Build(2026, new DateOnly(2026, 9, 24), []);
         var layout = BarLayoutEngine.Compute(1920, 32, 1.0, GrassLayoutEngine.ColumnCount(2026));
-        var step = layout.CellSize + layout.CellGap;
+        var stepX = layout.CellWidth + layout.CellGap;
+        var stepY = layout.CellHeight + layout.CellGap;
         var target = cells.Single(c => c.Date == new DateOnly(2026, 3, 10));
 
         var hit = GrassLayoutEngine.HitTest(
-            layout, cells, layout.Grass.X + target.Column * step + 1, layout.Grass.Y + target.Row * step + 1);
+            layout, cells, layout.Grass.X + target.Column * stepX + 1, layout.Grass.Y + target.Row * stepY + 1);
 
         Assert.Equal(target.Date, hit?.Date);
         // 最初の列の月曜（行 0）は年の外

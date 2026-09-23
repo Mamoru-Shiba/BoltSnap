@@ -77,6 +77,38 @@ internal struct TRACKMOUSEEVENT
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal struct STARTUPINFOW
+{
+    public uint Cb;
+    public nint Reserved;
+    public nint Desktop;
+    public nint Title;
+    public uint X;
+    public uint Y;
+    public uint XSize;
+    public uint YSize;
+    public uint XCountChars;
+    public uint YCountChars;
+    public uint FillAttribute;
+    public uint Flags;
+    public ushort ShowWindow;
+    public ushort CbReserved2;
+    public nint Reserved2;
+    public nint StdInput;
+    public nint StdOutput;
+    public nint StdError;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct PROCESS_INFORMATION
+{
+    public nint Process;
+    public nint Thread;
+    public uint ProcessId;
+    public uint ThreadId;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct LASTINPUTINFO
 {
     public uint CbSize;
@@ -129,6 +161,10 @@ internal static class NativeMethods
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
     public const uint WS_EX_NOACTIVATE = 0x08000000;
 
+    public const uint CREATE_NO_WINDOW = 0x08000000;
+    public const uint WAIT_OBJECT_0 = 0;
+    public const uint STILL_ACTIVE = 259;
+
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOACTIVATE = 0x0010;
@@ -178,6 +214,30 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll")]
     public static extern uint GetTickCount();
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    public static extern int CreateProcessW(
+        string? application, nint commandLine, nint processAttributes, nint threadAttributes,
+        int inheritHandles, uint creationFlags, nint environment, string? currentDirectory,
+        ref STARTUPINFOW startup, out PROCESS_INFORMATION info);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint WaitForSingleObject(nint handle, uint milliseconds);
+
+    [DllImport("kernel32.dll")]
+    public static extern int GetExitCodeProcess(nint process, out uint exitCode);
+
+    [DllImport("kernel32.dll")]
+    public static extern int TerminateProcess(nint process, uint exitCode);
+
+    [DllImport("kernel32.dll")]
+    public static extern int CloseHandle(nint handle);
+
+    [DllImport("kernel32.dll")]
+    public static extern nint GetCurrentProcess();
+
+    [DllImport("kernel32.dll")]
+    public static extern int SetProcessWorkingSetSize(nint process, nint minimum, nint maximum);
 
     [DllImport("user32.dll")]
     public static extern int GetMessageW(out MSG msg, nint hwnd, uint min, uint max);
