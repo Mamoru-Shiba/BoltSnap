@@ -31,7 +31,7 @@ internal sealed class BarRenderer : IDisposable
     {
         _scale = scale;
         _font = NativeMethods.CreateFontW(
-            -(int)Math.Round(11 * scale), 0, 0, 0, NativeMethods.FW_NORMAL,
+            -(int)Math.Round(12 * scale), 0, 0, 0, NativeMethods.FW_NORMAL,
             0, 0, 0, NativeMethods.DEFAULT_CHARSET, 0, 0, NativeMethods.CLEARTYPE_QUALITY, 0, "Segoe UI");
     }
 
@@ -62,20 +62,17 @@ internal sealed class BarRenderer : IDisposable
     private void DrawText(nint hdc, BarLayout layout, BarModel model, GrassCell? hovered)
     {
         // 草にカーソルがあるときは、その日の日付と稼働時間に切り替える
-        var (line1, line2) = hovered is { } cell
+        var text = hovered is { } cell
             ? BarTextFormatter.FormatHover(cell)
             : BarTextFormatter.Format(model.Progress);
         var previousFont = NativeMethods.SelectObject(hdc, _font);
         NativeMethods.SetBkMode(hdc, NativeMethods.TRANSPARENT);
         NativeMethods.SetTextColor(hdc, TextColor);
 
-        var half = layout.Text.Height / 2;
-        var top = new RECT { Left = layout.Text.X, Top = 0, Right = layout.Text.Right, Bottom = half };
-        var bottom = new RECT { Left = layout.Text.X, Top = half, Right = layout.Text.Right, Bottom = layout.Text.Height };
+        var area = new RECT { Left = layout.Text.X, Top = 0, Right = layout.Text.Right, Bottom = layout.Text.Height };
         const uint format = NativeMethods.DT_LEFT | NativeMethods.DT_VCENTER | NativeMethods.DT_SINGLELINE
             | NativeMethods.DT_NOPREFIX | NativeMethods.DT_END_ELLIPSIS;
-        NativeMethods.DrawTextW(hdc, line1, -1, ref top, format);
-        NativeMethods.DrawTextW(hdc, line2, -1, ref bottom, format);
+        NativeMethods.DrawTextW(hdc, text, -1, ref area, format);
 
         NativeMethods.SelectObject(hdc, previousFont);
     }

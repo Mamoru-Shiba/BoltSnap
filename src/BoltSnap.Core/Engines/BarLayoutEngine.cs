@@ -21,10 +21,25 @@ public static class BarLayoutEngine
 
     private const int BaseMargin = 8;
     private const int BasePadding = 2;
-    private const int BaseTextWidth = 120;
+    private const int BaseTextWidth = 200;
     private const int BaseTimelineHeight = 12;
+    private const int BaseTaskbarWidth = 550;
+    private const int BaseTrayGap = 4;
 
     public static int BarHeight(double scale) => Scale(BaseHeight, scale);
+
+    /// <summary>
+    /// タスクバーの上に重ねる帯の位置。通知領域の左に接して置き、縦はタスクバーの中央に合わせる。
+    /// 空きが足りないときは、タスクバーの左端までに幅を縮める。
+    /// </summary>
+    public static PixelRect PlaceOnTaskbar(PixelRect taskbar, int trayLeft, double scale)
+    {
+        var gap = Scale(BaseTrayGap, scale);
+        var right = Math.Clamp(trayLeft, taskbar.X, taskbar.Right) - gap;
+        var width = Math.Clamp(Scale(BaseTaskbarWidth, scale), 0, Math.Max(0, right - taskbar.X));
+        var height = Math.Min(BarHeight(scale), taskbar.Height);
+        return new PixelRect(right - width, taskbar.Y + (taskbar.Height - height) / 2, width, height);
+    }
 
     public static BarLayout Compute(int width, int height, double scale, int columns)
     {
