@@ -30,13 +30,15 @@ dotnet build
 dotnet test
 ```
 
-Windows 用の実行ファイルの作成:
+Windows 用の実行ファイルの作成（Windows 上で実行）:
 
-```bash
+```powershell
+# Native AOT（推奨。単一の exe、約 1.6MB）。Visual Studio の「C++ によるデスクトップ開発」が必要
+dotnet publish src/BoltSnap -c Release -r win-x64 -p:PublishAot=true -o publish
+
+# 通常ビルド（.NET ランタイム同梱）。WSL/Linux からも作れる
 dotnet publish src/BoltSnap -c Release -r win-x64 --self-contained -p:PublishTrimmed=true -o publish
 ```
-
-Windows 上で Native AOT（`-p:PublishAot=true`）を使うと、さらに小さく・軽くできます（Visual Studio の C++ ビルドツールが必要）。
 
 ## 構成
 
@@ -52,7 +54,12 @@ tests/
 
 ## メモリの目安（実測）
 
-自己完結ビルドで、プライベートメモリ 約 5MB / ワーキングセット 約 20MB（共有ページ込み）。
+| ビルド | プライベート | ワーキングセット | 配布物 |
+|--------|-------------|-----------------|--------|
+| Native AOT | 約 4.0MB | 約 13.8MB | exe 1 つ（1.6MB） |
+| 通常（ランタイム同梱） | 約 5.7MB | 約 21.5MB | 約 18MB |
+
+ワーキングセットには、Windows の共有 DLL（user32・gdi32 など）のページが含まれます。実際に占有するのはプライベートの値に近くなります。
 
 ## License
 
