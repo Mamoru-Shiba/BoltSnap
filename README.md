@@ -1,49 +1,65 @@
 # BoltSnap
 
-Chrome 拡張機能。ワンクリックでフルページ・可視領域・範囲選択のスクリーンショットをローカルに保存します。
+Windows の画面最下部に常駐する、細い「時間と草」バー。
 
-## 特徴
+- 今日の 0〜24 時のタイムライン（PC を操作していた時間・現在時刻）
+- 第何週・何日目・年末までの残り日数
+- 1 日 1 マスの年間の草（稼働が長いほど濃く、未来の日は枠のみ）
 
-- デフォルトでフルページキャプチャ（スクロール合成）
-- 可視領域キャプチャ／範囲選択キャプチャを切替可能
-- ローカル PNG ダウンロード ＋ クリップボードコピー
-- 外部通信ゼロ。APIキー・アカウント不要
+キーボード・マウスの操作の有無（1 分単位）だけを記録します。入力内容・アプリ名・ウィンドウ名は取得せず、外部通信もしません。
+
+## 仕組み
+
+- 帯は AppBar として画面下端（タスクバーの真上）に領域を確保するため、他のウィンドウと重なりません。
+- 最後の入力から 5 分未満の間を「稼働」とみなし、10 秒ごとに確認します。
+- 記録は `%LOCALAPPDATA%\BoltSnap\{年}.bin` に保存します（1 日 = 1440 ビット、年 約 64KB）。
+- 常駐アプリなので軽さを優先し、WPF などを使わず Win32 + GDI で直接描画しています。
+
+## 使い方
+
+- 草にカーソルを重ねる: 左のテキストが、その日の日付と稼働時間に切り替わります。
+- 右クリック（帯またはトレイアイコン）: 「ログイン時に自動起動」の切替と「終了」
+- 終了すると確保していた画面領域は元に戻ります。
 
 ## 開発
 
+.NET 8 SDK が必要です。
+
 ```bash
-npm install
-npm run dev    # 開発モード（HMR）
-npm run build  # dist/ に本番ビルド
-npm test       # Vitest
-npm run check  # Biome（lint + format チェック）
+dotnet build
+dotnet test
 ```
 
-### Chrome への読み込み
+Windows 用の実行ファイルの作成（Windows 上で実行）:
 
-1. `npm run build`
-2. `chrome://extensions` を開き「デベロッパーモード」ON
-3. 「パッケージ化されていない拡張機能を読み込む」→ `dist/` を指定
+```powershell
+# Native AOT（推奨。単一の exe、約 1.6MB）。Visual Studio の「C++ によるデスクトップ開発」が必要
+dotnet publish src/BoltSnap -c Release -r win-x64 -p:PublishAot=true -o publish
 
-## プロジェクト構成
+# 通常ビルド（.NET ランタイム同梱）。WSL/Linux からも作れる
+dotnet publish src/BoltSnap -c Release -r win-x64 --self-contained -p:PublishTrimmed=true -o publish
+```
+
+## 構成
 
 ```
 src/
-├── background/   Service Worker
-├── content/      Content Scripts（範囲選択 / スクロール合成）
-├── popup/        Popup UI（React + MUI）
-├── components/   UI コンポーネント（Feature-based）
-├── engines/      純粋ロジック（Tier1 テスト対象）
-├── services/     Chrome API ラッパ
-├── stores/       Zustand
-├── types/        TypeScript 型定義
-└── utils/        ユーティリティ
+├── BoltSnap.Core/   純粋ロジックと保存（OS 非依存）
+│   ├── Engines/     カレンダー・稼働判定・草の配置・帯のレイアウト
+│   └── Services/    稼働の記録と保存
+└── BoltSnap/        Win32 の UI（AppBar・GDI 描画・トレイ）
+tests/
+└── BoltSnap.Tests/  xUnit（Core を対象）
 ```
 
-## 貢献ガイド
+## メモリの目安（実測）
 
-- 本リポジトリは **パブリック公開** を前提としています。コミット前に `git diff --cached` で機密情報が含まれないことを確認してください。
-- 詳細なコーディング規約・BDD フロー・Git ブランチ運用はプロジェクト開発者向け内部ドキュメントを参照してください。
+| ビルド | プライベート | ワーキングセット | 配布物 |
+|--------|-------------|-----------------|--------|
+| Native AOT | 約 4.0MB | 約 13.8MB | exe 1 つ（1.6MB） |
+| 通常（ランタイム同梱） | 約 5.7MB | 約 21.5MB | 約 18MB |
+
+ワーキングセットには、Windows の共有 DLL（user32・gdi32 など）のページが含まれます。実際に占有するのはプライベートの値に近くなります。
 
 ## License
 
