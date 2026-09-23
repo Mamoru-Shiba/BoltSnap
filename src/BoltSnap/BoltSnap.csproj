@@ -5,6 +5,7 @@
     <RootNamespace>BoltSnap</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- 常駐アプリのため、メモリとサイズを最優先で削る -->
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

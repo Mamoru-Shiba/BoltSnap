@@ -6,6 +6,7 @@ public readonly record struct GrassCell(
     int Column,
     int Row,
     int Level,
+    int Minutes,
     bool IsFuture,
     bool IsToday);
 
@@ -59,11 +60,33 @@ public static class GrassLayoutEngine
                 (offset + i) / RowCount,
                 (offset + i) % RowCount,
                 isFuture ? 0 : LevelFor(minutes),
+                isFuture ? 0 : minutes,
                 isFuture,
                 date == today);
         }
 
         return cells;
+    }
+
+    /// <summary>帯の中の座標にある草のマスを返す。マスの間の隙間も含め、どのマスにも当たらなければ null。</summary>
+    public static GrassCell? HitTest(BarLayout layout, IReadOnlyList<GrassCell> cells, int x, int y)
+    {
+        var grass = layout.Grass;
+        if (cells.Count == 0 || x < grass.X || y < grass.Y || x >= grass.Right || y >= grass.Bottom)
+        {
+            return null;
+        }
+
+        var step = layout.CellSize + layout.CellGap;
+        var column = (x - grass.X) / step;
+        var row = (y - grass.Y) / step;
+        if (row >= RowCount)
+        {
+            return null;
+        }
+
+        var index = column * RowCount + row - cells[0].Row;
+        return index >= 0 && index < cells.Count ? cells[index] : null;
     }
 
     private static int RowOf(DateOnly date) => ((int)date.DayOfWeek + 6) % 7;

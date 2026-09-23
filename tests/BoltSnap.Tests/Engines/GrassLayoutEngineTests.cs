@@ -84,4 +84,46 @@ public class GrassLayoutEngineTests
         Assert.Equal(2, cells[0].Level);
         Assert.Equal(0, cells[1].Level);
     }
+    [Fact]
+    public void 記録のある日のマスは稼働分数を持ち未来は0になる()
+    {
+        var cells = GrassLayoutEngine.Build(2026, new DateOnly(2026, 1, 3), [135, 0, 45, 999]);
+
+        Assert.Equal(135, cells[0].Minutes);
+        Assert.Equal(45, cells[2].Minutes);
+        Assert.Equal(0, cells[3].Minutes);
+    }
+
+    [Fact]
+    public void 座標から該当する日のマスを見つける()
+    {
+        // Given
+        var today = new DateOnly(2026, 9, 24);
+        var cells = GrassLayoutEngine.Build(2026, today, []);
+        var layout = BarLayoutEngine.Compute(1920, 32, 1.0, GrassLayoutEngine.ColumnCount(2026));
+        var step = layout.CellSize + layout.CellGap;
+        var target = cells.Single(c => c.Date == new DateOnly(2026, 3, 10));
+
+        // When: そのマスの中央を指す
+        var hit = GrassLayoutEngine.HitTest(
+            layout, cells,
+            layout.Grass.X + target.Column * step + 1,
+            layout.Grass.Y + target.Row * step + 1);
+
+        // Then
+        Assert.Equal(target.Date, hit?.Date);
+    }
+
+    [Fact]
+    public void 元日より前の空きマスと草の外側は何にも当たらない()
+    {
+        var cells = GrassLayoutEngine.Build(2026, new DateOnly(2026, 9, 24), []);
+        var layout = BarLayoutEngine.Compute(1920, 32, 1.0, GrassLayoutEngine.ColumnCount(2026));
+
+        // 2026-01-01 は木曜なので、最初の列の月曜（行 0）は年の外
+        Assert.Null(GrassLayoutEngine.HitTest(layout, cells, layout.Grass.X + 1, layout.Grass.Y + 1));
+        Assert.Null(GrassLayoutEngine.HitTest(layout, cells, layout.Grass.X - 1, layout.Grass.Y + 5));
+        Assert.Null(GrassLayoutEngine.HitTest(layout, cells, layout.Grass.Right, layout.Grass.Y + 5));
+        Assert.Null(GrassLayoutEngine.HitTest(layout, cells, layout.Grass.X + 5, layout.Grass.Bottom));
+    }
 }

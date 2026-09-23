@@ -26,6 +26,9 @@ internal sealed unsafe class BarWindow
     private nint _hwnd;
     private double _scale = 1.0;
     private long _lastMinuteStamp = -1;
+    private GrassCell? _hovered;
+    private bool _trackingMouse;
+    private nint _trayIcon;
     private uint _taskbarCreatedMessage;
 
     public BarWindow(IActivityStore store)
@@ -75,6 +78,11 @@ internal sealed unsafe class BarWindow
         }
 
         _renderer?.Dispose();
+        if (_trayIcon != 0)
+        {
+            NativeMethods.DestroyIcon(_trayIcon);
+        }
+
         Marshal.FreeHGlobal(className);
     }
 
@@ -121,6 +129,13 @@ internal sealed unsafe class BarWindow
                 return (true, 1);
             case NativeMethods.WM_MOUSEACTIVATE:
                 return (true, NativeMethods.MA_NOACTIVATE);
+            case NativeMethods.WM_MOUSEMOVE:
+                OnMouseMove((short)(lParam & 0xFFFF), (short)((lParam >> 16) & 0xFFFF));
+                return (true, 0);
+            case NativeMethods.WM_MOUSELEAVE:
+                _trackingMouse = false;
+                SetHovered(null);
+                return (true, 0);
             case NativeMethods.WM_TIMER:
                 if ((nuint)wParam == PollTimerId)
                 {
@@ -182,6 +197,40 @@ internal sealed unsafe class BarWindow
         NativeMethods.InvalidateRect(_hwnd, 0, 0);
     }
 
+    private void OnMouseMove(int x, int y)
+    {
+        if (!_trackingMouse)
+        {
+            var track = new TRACKMOUSEEVENT
+            {
+                CbSize = (uint)sizeof(TRACKMOUSEEVENT),
+                DwFlags = NativeMethods.TME_LEAVE,
+                HwndTrack = _hwnd,
+            };
+            _trackingMouse = NativeMethods.TrackMouseEvent(ref track) != 0;
+        }
+
+        if (_model is null)
+        {
+            return;
+        }
+
+        NativeMethods.GetClientRect(_hwnd, out var client);
+        var layout = BarLayoutEngine.Compute(client.Right - client.Left, client.Bottom - client.Top, _scale, _model.GrassColumns);
+        SetHovered(GrassLayoutEngine.HitTest(layout, _model.Grass, x, y));
+    }
+
+    private void SetHovered(GrassCell? cell)
+    {
+        if (_hovered?.Date == cell?.Date)
+        {
+            return;
+        }
+
+        _hovered = cell;
+        NativeMethods.InvalidateRect(_hwnd, 0, 0);
+    }
+
     private void UpdateScale(uint dpi)
     {
         var scale = Math.Max(1.0, dpi / 96.0);
@@ -209,7 +258,7 @@ internal sealed unsafe class BarWindow
             var bitmap = NativeMethods.CreateCompatibleBitmap(hdc, width, height);
             var previous = NativeMethods.SelectObject(memDc, bitmap);
 
-            _renderer.Draw(memDc, width, height, _model);
+            _renderer.Draw(memDc, width, height, _model, _hovered);
             NativeMethods.BitBlt(hdc, 0, 0, width, height, memDc, 0, 0, NativeMethods.SRCCOPY);
 
             NativeMethods.SelectObject(memDc, previous);
@@ -268,9 +317,26 @@ internal sealed unsafe class BarWindow
         var nid = NewTrayData();
         nid.UFlags = NativeMethods.NIF_MESSAGE | NativeMethods.NIF_ICON | NativeMethods.NIF_TIP;
         nid.UCallbackMessage = NativeMethods.WM_TRAY;
-        nid.HIcon = NativeMethods.LoadIconW(0, NativeMethods.IDI_APPLICATION);
+        nid.HIcon = GetTrayIcon();
         CopyTip(&nid, "BoltSnap");
         NativeMethods.Shell_NotifyIconW(NativeMethods.NIM_ADD, ref nid);
+    }
+
+    /// <summary>exe に埋め込んだアイコンを取り出す。取れなければ Windows 標準のアイコンにする。</summary>
+    private nint GetTrayIcon()
+    {
+        if (_trayIcon == 0 && Environment.ProcessPath is { } path
+            && NativeMethods.ExtractIconExW(path, 0, out var large, out var small, 1) > 0)
+        {
+            if (large != 0)
+            {
+                NativeMethods.DestroyIcon(large);
+            }
+
+            _trayIcon = small;
+        }
+
+        return _trayIcon != 0 ? _trayIcon : NativeMethods.LoadIconW(0, NativeMethods.IDI_APPLICATION);
     }
 
     private void RemoveTrayIcon()

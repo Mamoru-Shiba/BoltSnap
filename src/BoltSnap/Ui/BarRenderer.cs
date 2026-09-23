@@ -35,15 +35,15 @@ internal sealed class BarRenderer : IDisposable
             0, 0, 0, NativeMethods.DEFAULT_CHARSET, 0, 0, NativeMethods.CLEARTYPE_QUALITY, 0, "Segoe UI");
     }
 
-    public void Draw(nint hdc, int width, int height, BarModel model)
+    public void Draw(nint hdc, int width, int height, BarModel model, GrassCell? hovered)
     {
         var whole = new RECT { Left = 0, Top = 0, Right = width, Bottom = height };
         NativeMethods.FillRect(hdc, ref whole, _background);
 
         var layout = BarLayoutEngine.Compute(width, height, _scale, model.GrassColumns);
-        DrawText(hdc, layout, model);
+        DrawText(hdc, layout, model, hovered);
         DrawTimeline(hdc, layout.Timeline, model);
-        DrawGrass(hdc, layout, model);
+        DrawGrass(hdc, layout, model, hovered);
     }
 
     public void Dispose()
@@ -59,9 +59,12 @@ internal sealed class BarRenderer : IDisposable
         }
     }
 
-    private void DrawText(nint hdc, BarLayout layout, BarModel model)
+    private void DrawText(nint hdc, BarLayout layout, BarModel model, GrassCell? hovered)
     {
-        var (line1, line2) = BarTextFormatter.Format(model.Progress);
+        // 草にカーソルがあるときは、その日の日付と稼働時間に切り替える
+        var (line1, line2) = hovered is { } cell
+            ? BarTextFormatter.FormatHover(cell)
+            : BarTextFormatter.Format(model.Progress);
         var previousFont = NativeMethods.SelectObject(hdc, _font);
         NativeMethods.SetBkMode(hdc, NativeMethods.TRANSPARENT);
         NativeMethods.SetTextColor(hdc, TextColor);
@@ -103,7 +106,7 @@ internal sealed class BarRenderer : IDisposable
         Fill(hdc, nowX, timeline.Y - extra, Math.Max(2, (int)Math.Round(_scale)), timeline.Height + extra * 2, _nowLine);
     }
 
-    private void DrawGrass(nint hdc, BarLayout layout, BarModel model)
+    private void DrawGrass(nint hdc, BarLayout layout, BarModel model, GrassCell? hovered)
     {
         var step = layout.CellSize + layout.CellGap;
         foreach (var cell in model.Grass)
@@ -118,12 +121,12 @@ internal sealed class BarRenderer : IDisposable
 
             if (cell.IsFuture)
             {
-                NativeMethods.FrameRect(hdc, ref rect, _futureOutline);
+                NativeMethods.FrameRect(hdc, ref rect, hovered?.Date == cell.Date ? _nowLine : _futureOutline);
                 continue;
             }
 
             NativeMethods.FillRect(hdc, ref rect, _levels[cell.Level]);
-            if (cell.IsToday)
+            if (cell.IsToday || hovered?.Date == cell.Date)
             {
                 NativeMethods.FrameRect(hdc, ref rect, _nowLine);
             }
