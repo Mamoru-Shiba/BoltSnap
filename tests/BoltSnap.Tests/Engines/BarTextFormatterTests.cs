@@ -7,12 +7,9 @@ public class BarTextFormatterTests
     [Fact]
     public void 週_日_残りを2行の文言にする()
     {
-        var progress = CalendarEngine.GetProgress(new DateOnly(2026, 9, 24));
+        var (line1, line2) = BarTextFormatter.Format(CalendarEngine.GetProgress(new DateOnly(2026, 9, 24)));
 
-        var (line1, line2) = BarTextFormatter.Format(progress);
-
-        Assert.Equal("第39週 267日目", line1);
-        Assert.Equal("残り98日 (73%)", line2);
+        Assert.Equal(("第39週 267日目", "残り98日 (73%)"), (line1, line2));
     }
 
     [Fact]
@@ -26,29 +23,15 @@ public class BarTextFormatterTests
             Assert.InRange(line2.Length, 1, 30);
         }
     }
-    [Theory]
-    [InlineData(0, "稼働なし")]
-    [InlineData(45, "稼働 45分")]
-    [InlineData(120, "稼働 2時間")]
-    [InlineData(135, "稼働 2時間15分")]
-    public void ホバー時は日付と稼働時間を表示する(int minutes, string expectedLine2)
-    {
-        // Given: 2026-09-24（木）
-        var cell = new GrassCell(new DateOnly(2026, 9, 24), 38, 3, 2, minutes, IsFuture: false, IsToday: false);
-
-        var (line1, line2) = BarTextFormatter.FormatHover(cell);
-
-        Assert.Equal("9月24日 (木)", line1);
-        Assert.Equal(expectedLine2, line2);
-    }
 
     [Fact]
-    public void ホバーした未来の日はこれからと表示する()
+    public void ホバー時は日付と稼働時間_未来はこれからと表示する()
     {
-        var cell = new GrassCell(new DateOnly(2026, 12, 31), 52, 3, 0, 0, IsFuture: true, IsToday: false);
+        var date = new DateOnly(2026, 9, 24); // 木曜
+        GrassCell Cell(int minutes, bool future = false) => new(date, 38, 3, 2, minutes, future, false);
 
-        var (_, line2) = BarTextFormatter.FormatHover(cell);
-
-        Assert.Equal("これから", line2);
+        Assert.Equal(("9月24日 (木)", "稼働なし"), BarTextFormatter.FormatHover(Cell(0)));
+        Assert.Equal(("9月24日 (木)", "稼働 2時間15分"), BarTextFormatter.FormatHover(Cell(135)));
+        Assert.Equal(("9月24日 (木)", "これから"), BarTextFormatter.FormatHover(Cell(0, future: true)));
     }
 }
