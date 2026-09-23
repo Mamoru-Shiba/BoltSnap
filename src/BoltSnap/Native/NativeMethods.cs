@@ -79,6 +79,15 @@ internal struct MONITORINFO
 }
 
 [StructLayout(LayoutKind.Sequential)]
+internal struct TRACKMOUSEEVENT
+{
+    public uint CbSize;
+    public uint DwFlags;
+    public nint HwndTrack;
+    public uint DwHoverTime;
+}
+
+[StructLayout(LayoutKind.Sequential)]
 internal struct LASTINPUTINFO
 {
     public uint CbSize;
@@ -116,7 +125,10 @@ internal static class NativeMethods
     public const uint WM_DISPLAYCHANGE = 0x007E;
     public const uint WM_TIMER = 0x0113;
     public const uint WM_TIMECHANGE = 0x001E;
+    public const uint WM_MOUSEMOVE = 0x0200;
+    public const uint WM_MOUSELEAVE = 0x02A3;
     public const uint WM_RBUTTONUP = 0x0205;
+    public const uint TME_LEAVE = 0x00000002;
     public const uint WM_NULL = 0x0000;
     public const uint WM_APPBAR = 0x0401;
     public const uint WM_TRAY = 0x0402;
@@ -232,7 +244,13 @@ internal static class NativeMethods
     public static extern nint LoadCursorW(nint instance, nint cursorName);
 
     [DllImport("user32.dll")]
+    public static extern int TrackMouseEvent(ref TRACKMOUSEEVENT track);
+
+    [DllImport("user32.dll")]
     public static extern nint LoadIconW(nint instance, nint iconName);
+
+    [DllImport("user32.dll")]
+    public static extern int DestroyIcon(nint icon);
 
     [DllImport("user32.dll")]
     public static extern uint GetDpiForWindow(nint hwnd);
@@ -311,6 +329,9 @@ internal static class NativeMethods
         int height, int width, int escapement, int orientation, int weight,
         uint italic, uint underline, uint strikeOut, uint charSet,
         uint outPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string faceName);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern uint ExtractIconExW(string file, int index, out nint large, out nint small, uint count);
 
     [DllImport("shell32.dll")]
     public static extern nuint SHAppBarMessage(uint message, ref APPBARDATA data);
