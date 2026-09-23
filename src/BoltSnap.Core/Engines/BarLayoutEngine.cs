@@ -21,9 +21,9 @@ public static class BarLayoutEngine
 
     private const int BaseMargin = 8;
     private const int BasePadding = 2;
-    private const int BaseTextWidth = 104;
+    private const int BaseTextWidth = 200;
     private const int BaseTimelineHeight = 12;
-    private const int BaseTaskbarWidth = 440;
+    private const int BaseTaskbarWidth = 550;
     private const int BaseTrayGap = 4;
 
     public static int BarHeight(double scale) => Scale(BaseHeight, scale);
