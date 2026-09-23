@@ -59,17 +59,6 @@ internal struct PAINTSTRUCT
 }
 
 [StructLayout(LayoutKind.Sequential)]
-internal struct APPBARDATA
-{
-    public uint CbSize;
-    public nint Hwnd;
-    public uint UCallbackMessage;
-    public uint UEdge;
-    public RECT Rc;
-    public nint LParam;
-}
-
-[StructLayout(LayoutKind.Sequential)]
 internal struct MONITORINFO
 {
     public uint CbSize;
@@ -130,7 +119,6 @@ internal static class NativeMethods
     public const uint WM_RBUTTONUP = 0x0205;
     public const uint TME_LEAVE = 0x00000002;
     public const uint WM_NULL = 0x0000;
-    public const uint WM_APPBAR = 0x0401;
     public const uint WM_TRAY = 0x0402;
 
     public const nint MA_NOACTIVATE = 3;
@@ -141,19 +129,18 @@ internal static class NativeMethods
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
     public const uint WS_EX_NOACTIVATE = 0x08000000;
 
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_SHOWWINDOW = 0x0040;
     public const nint HWND_TOPMOST = -1;
-    public const nint HWND_BOTTOM = 1;
+    public const int QUNS_BUSY = 2;
+    public const int QUNS_RUNNING_D3D_FULL_SCREEN = 3;
+    public const int QUNS_PRESENTATION_MODE = 4;
 
-    // AppBar
-    public const uint ABM_NEW = 0;
-    public const uint ABM_REMOVE = 1;
-    public const uint ABM_QUERYPOS = 2;
-    public const uint ABM_SETPOS = 3;
-    public const uint ABE_BOTTOM = 3;
-    public const int ABN_FULLSCREENAPP = 2;
-    public const int ABN_POSCHANGED = 1;
+    public const int SW_HIDE = 0;
+    public const int SW_SHOWNOACTIVATE = 4;
+    public const int GWLP_HWNDPARENT = -8;
 
     // トレイ
     public const uint NIM_ADD = 0;
@@ -221,6 +208,21 @@ internal static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern int SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern nint FindWindowW(string className, string? windowName);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern nint FindWindowExW(nint parent, nint childAfter, string className, string? windowName);
+
+    [DllImport("user32.dll")]
+    public static extern int GetWindowRect(nint hwnd, out RECT rect);
+
+    [DllImport("user32.dll")]
+    public static extern int ShowWindow(nint hwnd, int command);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    public static extern nint SetWindowLongPtrW(nint hwnd, int index, nint value);
 
     [DllImport("user32.dll")]
     public static extern int GetClientRect(nint hwnd, out RECT rect);
@@ -334,7 +336,7 @@ internal static class NativeMethods
     public static extern uint ExtractIconExW(string file, int index, out nint large, out nint small, uint count);
 
     [DllImport("shell32.dll")]
-    public static extern nuint SHAppBarMessage(uint message, ref APPBARDATA data);
+    public static extern int SHQueryUserNotificationState(out int state);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     public static extern int Shell_NotifyIconW(uint message, ref NOTIFYICONDATAW data);
