@@ -6,10 +6,20 @@ namespace BoltSnap.Services;
 /// <summary>タスクバーの、アイコンの右端から次の部品（ウィジェット・トレイ）の左端までの空き。</summary>
 internal readonly record struct FreeRegion(int Left, int Right);
 
+internal enum ProbeState
+{
+    Pending,
+    Done,
+    Failed,
+}
+
 /// <summary>
 /// UI Automation でタスクバーのボタンの位置を読み、アイコンの後ろの空きを求める。
 /// .NET の UI Automation クラスは AOT で使えないため、COM を直接呼ぶ。
 /// 旧来のウィンドウ（MSTaskSwWClass など）の位置は実際とずれるので使わない。
+///
+/// UI Automation の DLL は常駐するアプリの中には読み込まず、測定のたびに短時間だけ動く
+/// 別プロセス（自分自身を --probe で起動）に任せる。結果は終了コード（左端 16 ビット + 右端 16 ビット）で返る。
 /// </summary>
 internal static unsafe class TaskbarProbeService
 {
@@ -22,17 +32,96 @@ internal static unsafe class TaskbarProbeService
     private static Guid s_clsidAutomation = new("ff48dba4-60ef-4201-aa87-54103eef594e");
     private static Guid s_iidAutomation = new("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee");
 
-    // 測るたびに作り直すと UI Automation 側にメモリが溜まるため、1 つを使い回す
     private static nint s_automation;
 
-    /// <summary>UI スレッドで、最初に一度だけ呼ぶ。</summary>
-    public static void Initialize() => CoInitializeEx(0, CoinitApartmentThreaded);
+    public const string ProbeArgument = "--probe";
+
+    private static nint s_processHandle;
+
+    /// <summary>測定用の別プロセスとして起動されたときの処理。終了コードで結果を返す。</summary>
+    public static int RunProbe(string taskbarHandle, string trayLeft)
+    {
+        CoInitializeEx(0, CoinitApartmentThreaded);
+        if (!nint.TryParse(taskbarHandle, out var taskbar) || !int.TryParse(trayLeft, out var tray)
+            || !Measure(taskbar, tray, out var region)
+            || region.Left is < 0 or > 0xFFFF || region.Right is < 0 or > 0xFFFF)
+        {
+            return 0;
+        }
+
+        return unchecked((int)(((uint)region.Left << 16) | (uint)region.Right));
+    }
+
+    /// <summary>測定用の別プロセスを起動する。前回のものが動いている間は何もしない。</summary>
+    public static void BeginProbe(nint taskbar, int trayLeft)
+    {
+        if (s_processHandle != 0 || Environment.ProcessPath is not { } exe)
+        {
+            return;
+        }
+
+        var commandLine = Marshal.StringToHGlobalUni($"\"{exe}\" {ProbeArgument} {taskbar} {trayLeft}");
+        try
+        {
+            var startup = new STARTUPINFOW { Cb = (uint)sizeof(STARTUPINFOW) };
+            if (NativeMethods.CreateProcessW(
+                    null, commandLine, 0, 0, 0, NativeMethods.CREATE_NO_WINDOW, 0, null, ref startup, out var info) != 0)
+            {
+                NativeMethods.CloseHandle(info.Thread);
+                s_processHandle = info.Process;
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(commandLine);
+        }
+    }
+
+    /// <summary>
+    /// 測定の結果を受け取る。まだ動いているときは Pending、失敗は Failed。
+    /// 進行中の測定が無いときも Pending を返す（前回の値をそのまま使う）。
+    /// </summary>
+    public static ProbeState Collect(out FreeRegion region)
+    {
+        region = default;
+        if (s_processHandle == 0)
+        {
+            return ProbeState.Pending;
+        }
+
+        if (NativeMethods.WaitForSingleObject(s_processHandle, 0) != NativeMethods.WAIT_OBJECT_0)
+        {
+            return ProbeState.Pending;
+        }
+
+        NativeMethods.GetExitCodeProcess(s_processHandle, out var code);
+        NativeMethods.CloseHandle(s_processHandle);
+        s_processHandle = 0;
+        if (code == 0)
+        {
+            return ProbeState.Failed;
+        }
+
+        region = new FreeRegion((int)(code >> 16), (int)(code & 0xFFFF));
+        return ProbeState.Done;
+    }
+
+    /// <summary>起動時などに、測定の完了を最大 timeoutMs だけ待つ。</summary>
+    public static ProbeState WaitForResult(int timeoutMs, out FreeRegion region)
+    {
+        if (s_processHandle != 0)
+        {
+            NativeMethods.WaitForSingleObject(s_processHandle, (uint)timeoutMs);
+        }
+
+        return Collect(out region);
+    }
 
     /// <summary>
     /// 最後のアイコンの右端と、その右にある最初の部品の左端を返す。
     /// 取得できない（古いタスクバーなど）ときは false。
     /// </summary>
-    public static bool TryGetFreeRegion(nint taskbar, int trayLeft, out FreeRegion region)
+    private static bool Measure(nint taskbar, int trayLeft, out FreeRegion region)
     {
         region = default;
         nint root = 0;
@@ -67,7 +156,7 @@ internal static unsafe class TaskbarProbeService
                 return false;
             }
 
-            return Measure(array, trayLeft, out region);
+            return MeasureButtons(array, trayLeft, out region);
         }
         catch (Exception)
         {
@@ -81,7 +170,7 @@ internal static unsafe class TaskbarProbeService
         }
     }
 
-    private static bool Measure(nint array, int trayLeft, out FreeRegion region)
+    private static bool MeasureButtons(nint array, int trayLeft, out FreeRegion region)
     {
         region = default;
         var length = 0;

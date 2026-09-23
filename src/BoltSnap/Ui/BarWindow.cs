@@ -69,7 +69,6 @@ internal sealed unsafe class BarWindow
             return;
         }
 
-        TaskbarProbeService.Initialize();
         Reposition(force: true);
         AddTrayIcon();
         Poll();
@@ -202,8 +201,9 @@ internal sealed unsafe class BarWindow
 
         if (minuteChanged)
         {
-            // 常駐アプリなので、1 分ごとに不要なデータを回収してメモリを増やさない
+            // 常駐アプリなので、1 分ごとに不要なデータを回収し、使っていないページを OS に返す
             GC.Collect();
+            NativeMethods.SetProcessWorkingSetSize(NativeMethods.GetCurrentProcess(), -1, -1);
         }
     }
 
@@ -288,16 +288,29 @@ internal sealed unsafe class BarWindow
         var (taskbar, trayLeft, dpi, taskbarHwnd) = LocateTaskbar();
         UpdateScale(dpi);
 
-        // アイコンの並びが変わることがあるので、空きは 4 秒ごと（2 秒タイマーの 2 回に 1 回）に測り直す
-        if (force || _placeTicks++ % 2 == 0)
+        // アイコンの並びが変わることがあるので、空きは 16 秒ごと（2 秒タイマーの 8 回に 1 回）に測り直す。
+        // 測定は別プロセスで行い、結果が出ていれば取り込む
+        if (taskbarHwnd == 0)
         {
-            _freeRegion = taskbarHwnd != 0 && TaskbarProbeService.TryGetFreeRegion(taskbarHwnd, trayLeft, out var free)
-                ? free
-                : null;
+            _freeRegion = null;
+        }
+        else
+        {
+            if (force || _placeTicks++ % 8 == 0)
+            {
+                TaskbarProbeService.BeginProbe(taskbarHwnd, trayLeft);
+                if (force)
+                {
+                    // 起動時などは、最初の位置がずれて見えないよう少しだけ待つ
+                    ApplyProbe(TaskbarProbeService.WaitForResult(1500, out var first), first);
+                }
+            }
+
+            ApplyProbe(TaskbarProbeService.Collect(out var region), region);
         }
 
-        var target = _freeRegion is { } region
-            ? BarLayoutEngine.PlaceInRegion(taskbar, region.Left, region.Right, _scale)
+        var target = _freeRegion is { } free
+            ? BarLayoutEngine.PlaceInRegion(taskbar, free.Left, free.Right, _scale)
             : BarLayoutEngine.PlaceOnTaskbar(taskbar, trayLeft, _scale);
         var moved = force || target != _placement;
         _placement = target;
@@ -325,6 +338,19 @@ internal sealed unsafe class BarWindow
         if (moved)
         {
             NativeMethods.InvalidateRect(_hwnd, 0, 0);
+        }
+    }
+
+    private void ApplyProbe(ProbeState state, FreeRegion region)
+    {
+        switch (state)
+        {
+            case ProbeState.Done:
+                _freeRegion = region;
+                break;
+            case ProbeState.Failed:
+                _freeRegion = null;
+                break;
         }
     }
 
