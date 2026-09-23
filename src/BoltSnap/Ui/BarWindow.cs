@@ -7,12 +7,14 @@ using BoltSnap.Services;
 
 namespace BoltSnap.Ui;
 
-/// <summary>画面下端に AppBar として固定される帯のウィンドウ。</summary>
+/// <summary>タスクバーの通知領域の左に重ねて表示される帯のウィンドウ。</summary>
 internal sealed unsafe class BarWindow
 {
     private const string ClassName = "BoltSnapBar";
     private const nuint PollTimerId = 1;
     private const uint PollIntervalMs = 10_000;
+    private const nuint PlaceTimerId = 2;
+    private const uint PlaceIntervalMs = 2_000;
     private const uint TrayIconId = 1;
     private const nuint MenuAutoStart = 1;
     private const nuint MenuExit = 2;
@@ -30,6 +32,8 @@ internal sealed unsafe class BarWindow
     private bool _trackingMouse;
     private nint _trayIcon;
     private uint _taskbarCreatedMessage;
+    private PixelRect _placement;
+    private bool _shown;
 
     public BarWindow(IActivityStore store)
     {
@@ -63,13 +67,12 @@ internal sealed unsafe class BarWindow
             return;
         }
 
-        UpdateScale(NativeMethods.GetDpiForWindow(_hwnd));
-        RegisterAppBar();
-        Reposition();
+        Reposition(force: true);
         AddTrayIcon();
         Poll();
         RefreshModel(force: true);
         NativeMethods.SetTimer(_hwnd, PollTimerId, PollIntervalMs, 0);
+        NativeMethods.SetTimer(_hwnd, PlaceTimerId, PlaceIntervalMs, 0);
 
         while (NativeMethods.GetMessageW(out var msg, 0, 0, 0) > 0)
         {
@@ -113,10 +116,9 @@ internal sealed unsafe class BarWindow
     {
         if (msg == _taskbarCreatedMessage && msg != 0)
         {
-            // エクスプローラーの再起動後に、トレイと AppBar を登録し直す
+            // エクスプローラーの再起動後に、トレイアイコンを登録し直して配置を取り直す
             AddTrayIcon();
-            RegisterAppBar();
-            Reposition();
+            Reposition(force: true);
             return (true, 0);
         }
 
@@ -141,21 +143,19 @@ internal sealed unsafe class BarWindow
                 {
                     Poll();
                 }
+                else if ((nuint)wParam == PlaceTimerId)
+                {
+                    // タスクバーが前面に出ても帯が隠れないよう、位置と前後関係を保つ
+                    Reposition(force: false);
+                }
 
                 return (true, 0);
             case NativeMethods.WM_TIMECHANGE:
                 RefreshModel(force: true);
                 return (true, 0);
             case NativeMethods.WM_DISPLAYCHANGE:
-                UpdateScale(NativeMethods.GetDpiForWindow(_hwnd));
-                Reposition();
-                return (true, 0);
             case NativeMethods.WM_DPICHANGED:
-                UpdateScale((uint)(wParam & 0xFFFF));
-                Reposition();
-                return (true, 0);
-            case NativeMethods.WM_APPBAR:
-                OnAppBarNotify((int)wParam);
+                Reposition(force: true);
                 return (true, 0);
             case NativeMethods.WM_TRAY:
                 if ((uint)(lParam & 0xFFFF) == NativeMethods.WM_RBUTTONUP)
@@ -269,48 +269,83 @@ internal sealed unsafe class BarWindow
         NativeMethods.EndPaint(_hwnd, ref ps);
     }
 
-    private void RegisterAppBar()
+    /// <summary>
+    /// タスクバーの通知領域の左に重ねて配置する。
+    /// タスクバーが見つからない・縦置きのときは、画面下端の右に置く。
+    /// </summary>
+    private void Reposition(bool force)
     {
-        var data = NewAppBarData();
-        data.UCallbackMessage = NativeMethods.WM_APPBAR;
-        NativeMethods.SHAppBarMessage(NativeMethods.ABM_NEW, ref data);
-    }
+        var (taskbar, trayLeft, dpi) = LocateTaskbar();
+        UpdateScale(dpi);
+        var target = BarLayoutEngine.PlaceOnTaskbar(taskbar, trayLeft, _scale);
+        var moved = force || target != _placement;
+        _placement = target;
 
-    /// <summary>プライマリ画面の下端に、タスクバーと重ならない位置で領域を予約して配置する。</summary>
-    private void Reposition()
-    {
-        var monitor = NativeMethods.MonitorFromPoint(default, NativeMethods.MONITOR_DEFAULTTOPRIMARY);
-        var info = new MONITORINFO { CbSize = (uint)sizeof(MONITORINFO) };
-        NativeMethods.GetMonitorInfoW(monitor, ref info);
+        if (IsFullScreenAppRunning())
+        {
+            if (_shown)
+            {
+                NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_HIDE);
+                _shown = false;
+            }
 
-        var height = BarLayoutEngine.BarHeight(_scale);
-        var data = NewAppBarData();
-        data.Rc = info.RcMonitor;
-        NativeMethods.SHAppBarMessage(NativeMethods.ABM_QUERYPOS, ref data);
-        data.Rc.Top = data.Rc.Bottom - height;
-        NativeMethods.SHAppBarMessage(NativeMethods.ABM_SETPOS, ref data);
+            return;
+        }
+
+        var flags = NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW;
+        if (!moved && _shown)
+        {
+            flags |= NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE;
+        }
 
         NativeMethods.SetWindowPos(
-            _hwnd, NativeMethods.HWND_TOPMOST,
-            data.Rc.Left, data.Rc.Top, data.Rc.Right - data.Rc.Left, height,
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
-        NativeMethods.InvalidateRect(_hwnd, 0, 0);
-    }
-
-    private void OnAppBarNotify(int code)
-    {
-        if (code == NativeMethods.ABN_POSCHANGED)
+            _hwnd, NativeMethods.HWND_TOPMOST, target.X, target.Y, target.Width, target.Height, flags);
+        _shown = true;
+        if (moved)
         {
-            Reposition();
+            NativeMethods.InvalidateRect(_hwnd, 0, 0);
         }
     }
 
-    private APPBARDATA NewAppBarData() => new()
+    private (PixelRect Taskbar, int TrayLeft, uint Dpi) LocateTaskbar()
     {
-        CbSize = (uint)sizeof(APPBARDATA),
-        Hwnd = _hwnd,
-        UEdge = NativeMethods.ABE_BOTTOM,
-    };
+        var taskbar = NativeMethods.FindWindowW("Shell_TrayWnd", null);
+        if (taskbar != 0
+            && NativeMethods.GetWindowRect(taskbar, out var rect) != 0
+            && rect.Right - rect.Left > rect.Bottom - rect.Top)
+        {
+            var trayLeft = rect.Right;
+            var notify = NativeMethods.FindWindowExW(taskbar, 0, "TrayNotifyWnd", null);
+            if (notify != 0 && NativeMethods.GetWindowRect(notify, out var tray) != 0 && tray.Left > rect.Left)
+            {
+                trayLeft = tray.Left;
+            }
+
+            var dpi = NativeMethods.GetDpiForWindow(taskbar);
+            return (
+                new PixelRect(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top),
+                trayLeft,
+                dpi == 0 ? 96 : dpi);
+        }
+
+        var monitor = NativeMethods.MonitorFromPoint(default, NativeMethods.MONITOR_DEFAULTTOPRIMARY);
+        var info = new MONITORINFO { CbSize = (uint)sizeof(MONITORINFO) };
+        NativeMethods.GetMonitorInfoW(monitor, ref info);
+        var ownDpi = NativeMethods.GetDpiForWindow(_hwnd);
+        var height = BarLayoutEngine.BarHeight((ownDpi == 0 ? 96 : ownDpi) / 96.0);
+        var bottom = info.RcMonitor.Bottom;
+        return (
+            new PixelRect(info.RcMonitor.Left, bottom - height, info.RcMonitor.Right - info.RcMonitor.Left, height),
+            info.RcMonitor.Right,
+            ownDpi == 0 ? 96 : ownDpi);
+    }
+
+    /// <summary>全画面のアプリやプレゼン中は、帯が上に被さらないよう隠す。</summary>
+    private static bool IsFullScreenAppRunning()
+    {
+        return NativeMethods.SHQueryUserNotificationState(out var state) == 0
+            && state is NativeMethods.QUNS_BUSY or NativeMethods.QUNS_RUNNING_D3D_FULL_SCREEN or NativeMethods.QUNS_PRESENTATION_MODE;
+    }
 
     private void AddTrayIcon()
     {
@@ -391,12 +426,11 @@ internal sealed unsafe class BarWindow
         }
     }
 
-    /// <summary>予約していた画面領域とトレイアイコンを解放してから終了する。</summary>
+    /// <summary>トレイアイコンを外してから終了する。</summary>
     private void Exit()
     {
         NativeMethods.KillTimer(_hwnd, PollTimerId);
-        var data = NewAppBarData();
-        NativeMethods.SHAppBarMessage(NativeMethods.ABM_REMOVE, ref data);
+        NativeMethods.KillTimer(_hwnd, PlaceTimerId);
         RemoveTrayIcon();
         NativeMethods.DestroyWindow(_hwnd);
     }
